@@ -86,7 +86,7 @@ def _infer_hint_cause(text: str) -> str:
     return scores.most_common(1)[0][0]
 
 
-def build_query(log_name: str, text: str, gt_cause: str) -> str:
+def build_query(log_name: str, text: str) -> str:
     signal_lines = _extract_signal_lines(text)
     signal_text = " | ".join(signal_lines)
     hint_cause = _infer_hint_cause(signal_text)
@@ -104,7 +104,6 @@ def build_query(log_name: str, text: str, gt_cause: str) -> str:
         f"focus_log={log_name}; "
         f"symptom_lines={signal_text}; "
         f"hint_cause={hint_cause}; "
-        f"gt_hint={gt_cause}; "
         f"keywords={token_part}; "
         "task=원인 경로 추정"
     )
@@ -119,9 +118,8 @@ def predict_for_rows(rows: list[dict], memory_path: Path) -> dict[str, str]:
     for r in rows:
         log_id = r["log_id"]
         log_name = r["log_name"]
-        gt_cause = r["gt_cause_top1"]
         txt = read_text_best(LOG_ROOT / log_id.replace("/", "\\"))
-        q = build_query(log_name, txt, gt_cause)
+        q = build_query(log_name, txt)
         pred = p.run(q)
         out[log_id] = pred.cause
     return out
