@@ -1,3 +1,5 @@
+import json
+
 from mrga.workflow import MRGAPipeline
 from mrga.models import RetrievalDoc
 from mrga.rag import HybridRetriever, KeywordRetriever
@@ -16,8 +18,13 @@ def test_memory_written(tmp_path):
     mem = tmp_path / "mem.json"
     p = MRGAPipeline(memory_path=mem)
     p.run("전원 28V fail")
-    txt = mem.read_text(encoding="utf-8")
-    assert "power_path" in txt
+    data = json.loads(mem.read_text(encoding="utf-8"))
+
+    assert data["schema_version"] == "1.1"
+    assert data["episode_memory"]["history"]
+    assert data["episode_memory"]["history"][-1]["cause"] == "power_path"
+    assert data["verification_memory"]["history"]
+    assert "approval_status" in data["verification_memory"]["history"][-1]
 
 
 def test_ifcc_crc_query_prefers_communication_path(tmp_path):
@@ -60,3 +67,18 @@ def test_vector_db_connection_state_available_on_this_host(tmp_path):
     p = MRGAPipeline(memory_path=mem)
     # user-confirmed vector DB path should be usable on this host
     assert p.hybrid_retriever.uses_vector_db is True
+
+
+def test_legacy_memory_records_are_migrated(tmp_path):
+    mem = tmp_path / "legacy_mem.json"
+    mem.write_text(
+        json.dumps({"records": [{"query": "old", "cause": "power_path"}]}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    p = MRGAPipeline(memory_path=mem)
+    p.run("IFCC 통신 CRC fail")
+
+    data = json.loads(mem.read_text(encoding="utf-8"))
+    assert data["schema_version"] == "1.1"
+    assert data["episode_memory"]["history"][0]["cause"] == "power_path"
+    assert len(data["episode_memory"]["history"]) >= 2

@@ -119,13 +119,24 @@ class MemoryAgent:
         self.memory = memory
 
     def run(self, case: CaseInput, out: CaseOutput):
-        rec = {
+        episode_rec = {
             "query": case.query,
             "cause": out.cause,
             "risk": out.risk,
             "approved": out.approved,
             "feedback": out.feedback_note,
             "actions": out.recommended_actions,
+            "confidence": out.confidence,
+            "evidence_sources": [d.source for d in out.evidence],
         }
-        self.memory.append(rec)
-        return {"saved": "true", "cause": out.cause}
+        verification_rec = {
+            "query": case.query,
+            "approval_status": "approved" if out.approved else "hold",
+            "risk": out.risk,
+            "confidence": out.confidence,
+            "feedback": out.feedback_note,
+        }
+
+        self.memory.append_episode(episode_rec)
+        self.memory.append_verification(verification_rec)
+        return {"saved": "true", "cause": out.cause, "schema": "1.1"}
