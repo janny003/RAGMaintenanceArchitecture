@@ -17,17 +17,69 @@ class RetrievalAgent:
 
 
 class DiagnosisAgent:
+    KEYWORDS = {
+        "rf_path": ["주파수", "rf", "frequency", "down-converter", "up-converter", "증폭"],
+        "power_path": ["전원", "power", "28v", "전압", "전류", "bus voltage"],
+        "communication_path": ["ethernet", "통신", "crc", "modem", "rs-422", "rs-232", "can"],
+        "test_failure_pattern": ["fail", "failed", "불량", "고장", "재시험", "retry"],
+    }
+
+    # Source reliability/intent weights
+    SOURCE_WEIGHTS = {
+        "fmea": 1.4,
+        "절차서": 1.2,
+        "icd": 1.1,
+        "정비이력": 1.0,
+    }
+
+    def _source_weight(self, source: str) -> float:
+        s = (source or "").lower()
+        for key, w in self.SOURCE_WEIGHTS.items():
+            if key in s:
+                return w
+        return 1.0
+
+    def _count_hits(self, text: str, tokens: list[str]) -> int:
+        return sum(1 for t in tokens if t in text)
+
     def run(self, context: str, docs):
-        text = (context + " " + " ".join(d.content for d in docs)).lower()
-        if any(k in text for k in ["주파수", "rf", "frequency"]):
-            return "rf_path", "HIGH", 0.86
-        if any(k in text for k in ["전원", "power", "28v"]):
-            return "power_path", "HIGH", 0.84
-        if any(k in text for k in ["ethernet", "통신", "crc", "modem"]):
-            return "communication_path", "MEDIUM", 0.78
-        if "fail" in text or "불량" in text:
-            return "test_failure_pattern", "MEDIUM", 0.72
-        return "normal", "LOW", 0.65
+        ctx = (context or "").lower()
+
+        scores = {
+            "rf_path": 0.0,
+            "power_path": 0.0,
+            "communication_path": 0.0,
+            "test_failure_pattern": 0.0,
+        }
+
+        # 1) User-query/context signal (strongest)
+        for cause, tokens in self.KEYWORDS.items():
+            scores[cause] += 2.5 * self._count_hits(ctx, tokens)
+
+        # 2) Retrieved evidence signal (weighted by source)
+        for d in docs or []:
+            text = (d.content or "").lower()
+            sw = self._source_weight(getattr(d, "source", ""))
+            for cause, tokens in self.KEYWORDS.items():
+                scores[cause] += sw * self._count_hits(text, tokens)
+
+        best_cause = max(scores, key=scores.get)
+        best_score = scores[best_cause]
+
+        if best_score <= 0:
+            return "normal", "LOW", 0.65
+
+        # Confidence normalization for trust gate
+        conf = min(0.95, 0.68 + min(best_score, 8.0) * 0.035)
+
+        if best_cause in {"rf_path", "power_path"}:
+            risk = "HIGH"
+        elif best_cause in {"communication_path", "test_failure_pattern"}:
+            risk = "MEDIUM"
+        else:
+            risk = "LOW"
+
+        return best_cause, risk, round(conf, 4)
 
 
 class ProcedureAgent:

@@ -18,6 +18,13 @@ def test_memory_written(tmp_path):
     assert "power_path" in txt
 
 
+def test_ifcc_crc_query_prefers_communication_path(tmp_path):
+    mem = tmp_path / "mem.json"
+    p = MRGAPipeline(memory_path=mem)
+    out = p.run("IFCC 통신 CRC fail")
+    assert out.cause == "communication_path"
+
+
 def test_vector_db_connection_state_available_on_this_host(tmp_path):
     mem = tmp_path / "mem.json"
     p = MRGAPipeline(memory_path=mem)
