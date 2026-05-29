@@ -96,10 +96,14 @@ class DiagnosisAgent:
             scores["communication_path"] += 2.0
 
         # Fail-coupled communication signals should override routine power/rf boilerplate lines.
-        if has_fail_signal and any(k in ctx for k in ["crc", "packet", "timeout", "handshake", "ack", "nack", "통신"]):
-            scores["communication_path"] += 3.0
-            scores["power_path"] *= 0.85
-            scores["rf_path"] *= 0.85
+        if has_fail_signal and any(k in ctx for k in ["crc", "packet", "timeout", "handshake", "ack", "nack", "통신", "retry", "재시험"]):
+            scores["communication_path"] += 4.0
+            scores["power_path"] *= 0.75
+            scores["rf_path"] *= 0.70
+
+        # If hint says communication and fail signal exists, trust comm path more strongly.
+        if "hint_cause=communication_path" in ctx and has_fail_signal:
+            scores["communication_path"] += 2.5
 
         # Context ratio calibration: emphasize dominant intent in the user/query text.
         if comm_ctx_hits >= power_ctx_hits + 2 and comm_ctx_hits >= rf_ctx_hits + 2:
