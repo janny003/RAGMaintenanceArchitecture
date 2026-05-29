@@ -54,7 +54,8 @@ class DiagnosisAgent:
 
         # 1) User-query/context signal (strongest)
         for cause, tokens in self.KEYWORDS.items():
-            scores[cause] += 2.5 * self._count_hits(ctx, tokens)
+            base_weight = 1.2 if cause == "test_failure_pattern" else 2.5
+            scores[cause] += base_weight * self._count_hits(ctx, tokens)
 
         # Explicit query-intent boost to avoid evidence drift
         if any(k in ctx for k in ["통신", "crc", "ethernet", "modem", "rs-422", "rs-232", "can"]):
@@ -72,6 +73,16 @@ class DiagnosisAgent:
                 scores[cause] += sw * self._count_hits(text, tokens)
 
         best_cause = max(scores, key=scores.get)
+
+        # Calibration: prevent generic over-prediction when technical causes are close.
+        if best_cause == "test_failure_pattern":
+            technical_causes = ["communication_path", "power_path", "rf_path"]
+            tech_best = max(technical_causes, key=lambda c: scores[c])
+            tech_score = scores[tech_best]
+            generic_score = scores["test_failure_pattern"]
+            if tech_score >= 2.0 and tech_score >= generic_score * 0.7:
+                best_cause = tech_best
+
         best_score = scores[best_cause]
 
         if best_score <= 0:

@@ -34,6 +34,13 @@ def test_ifcc_crc_query_prefers_communication_path(tmp_path):
     assert out.cause == "communication_path"
 
 
+def test_generic_fail_with_comm_signal_prefers_communication_path(tmp_path):
+    mem = tmp_path / "mem.json"
+    p = MRGAPipeline(memory_path=mem)
+    out = p.run("통신 fail 재시험")
+    assert out.cause == "communication_path"
+
+
 def test_hybrid_retriever_deduplicates_and_limits_top_k():
     fallback = KeywordRetriever([])
     h = HybridRetriever(vector_db_dir="C:/not-used", fallback=fallback)
