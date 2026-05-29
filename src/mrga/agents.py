@@ -52,7 +52,7 @@ class DiagnosisAgent:
     def run(self, context: str, docs):
         ctx = (context or "").lower()
 
-        comm_tokens = ["통신", "crc", "ethernet", "modem", "rs-422", "rs-232", "can", "packet", "frame"]
+        comm_tokens = ["통신", "crc", "ethernet", "modem", "rs-422", "rs-232", "can", "packet", "frame", "ifcc", "uart", "serial", "timeout", "handshake", "ack", "nack"]
         power_tokens = ["전원", "power", "28v", "전압", "전류", "voltage", "current"]
         rf_tokens = ["주파수", "rf", "frequency", "증폭"]
         fail_tokens = ["fail", "failed", "불량", "고장", "retry", "재시험", "오류", "error"]
@@ -90,6 +90,16 @@ class DiagnosisAgent:
             scores["power_path"] += 3.0
         if has_rf_intent:
             scores["rf_path"] += 3.0
+
+        # Platform/line-name clues often carry communication intent in JAN logs.
+        if any(k in ctx for k in ["ifcc", "uart", "serial", "rs-422", "rs-232", "can"]):
+            scores["communication_path"] += 2.0
+
+        # Fail-coupled communication signals should override routine power/rf boilerplate lines.
+        if has_fail_signal and any(k in ctx for k in ["crc", "packet", "timeout", "handshake", "ack", "nack", "통신"]):
+            scores["communication_path"] += 3.0
+            scores["power_path"] *= 0.85
+            scores["rf_path"] *= 0.85
 
         # Context ratio calibration: emphasize dominant intent in the user/query text.
         if comm_ctx_hits >= power_ctx_hits + 2 and comm_ctx_hits >= rf_ctx_hits + 2:

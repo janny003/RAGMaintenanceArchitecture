@@ -55,6 +55,13 @@ def test_comm_dominant_context_beats_power_noise(tmp_path):
     assert out.cause == "communication_path"
 
 
+def test_ifcc_fail_pattern_boosts_communication_path(tmp_path):
+    mem = tmp_path / "mem.json"
+    p = MRGAPipeline(memory_path=mem)
+    out = p.run("focus_log=IFCC_250813.TXT; symptom_lines=전원단 단락 확인 정상 | CRC packet fail | retry 발생; task=원인 경로 추정")
+    assert out.cause == "communication_path"
+
+
 def test_hybrid_retriever_deduplicates_and_limits_top_k():
     fallback = KeywordRetriever([])
     h = HybridRetriever(vector_db_dir="C:/not-used", fallback=fallback)
