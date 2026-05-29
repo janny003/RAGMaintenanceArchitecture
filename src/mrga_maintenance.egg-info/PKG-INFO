@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: mrga-maintenance
+Version: 0.1.0
+Summary: MRGA baseline for ATE maintenance workflow
+Requires-Python: >=3.10
