@@ -41,6 +41,13 @@ def test_generic_fail_with_comm_signal_prefers_communication_path(tmp_path):
     assert out.cause == "communication_path"
 
 
+def test_pass_context_without_fail_signal_returns_normal(tmp_path):
+    mem = tmp_path / "mem.json"
+    p = MRGAPipeline(memory_path=mem)
+    out = p.run("IFCC 통신 상태 PASS 정상")
+    assert out.cause == "normal"
+
+
 def test_hybrid_retriever_deduplicates_and_limits_top_k():
     fallback = KeywordRetriever([])
     h = HybridRetriever(vector_db_dir="C:/not-used", fallback=fallback)

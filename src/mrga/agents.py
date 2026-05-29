@@ -42,8 +42,27 @@ class DiagnosisAgent:
     def _count_hits(self, text: str, tokens: list[str]) -> int:
         return sum(1 for t in tokens if t in text)
 
+    @staticmethod
+    def _has_any(text: str, tokens: list[str]) -> bool:
+        return any(t in text for t in tokens)
+
     def run(self, context: str, docs):
         ctx = (context or "").lower()
+
+        comm_tokens = ["통신", "crc", "ethernet", "modem", "rs-422", "rs-232", "can", "packet", "frame"]
+        power_tokens = ["전원", "power", "28v", "전압", "전류", "voltage", "current"]
+        rf_tokens = ["주파수", "rf", "frequency", "증폭"]
+        fail_tokens = ["fail", "failed", "불량", "고장", "retry", "재시험", "오류", "error"]
+        pass_tokens = ["pass", "정상"]
+
+        has_comm_intent = self._has_any(ctx, comm_tokens)
+        has_power_intent = self._has_any(ctx, power_tokens)
+        has_rf_intent = self._has_any(ctx, rf_tokens)
+        has_fail_signal = self._has_any(ctx, fail_tokens)
+        has_pass_signal = self._has_any(ctx, pass_tokens)
+
+        if has_pass_signal and not has_fail_signal:
+            return "normal", "LOW", 0.72
 
         scores = {
             "rf_path": 0.0,
@@ -58,11 +77,11 @@ class DiagnosisAgent:
             scores[cause] += base_weight * self._count_hits(ctx, tokens)
 
         # Explicit query-intent boost to avoid evidence drift
-        if any(k in ctx for k in ["통신", "crc", "ethernet", "modem", "rs-422", "rs-232", "can"]):
+        if has_comm_intent:
             scores["communication_path"] += 4.0
-        if any(k in ctx for k in ["전원", "power", "28v", "전압", "전류"]):
+        if has_power_intent:
             scores["power_path"] += 3.0
-        if any(k in ctx for k in ["주파수", "rf", "frequency", "증폭"]):
+        if has_rf_intent:
             scores["rf_path"] += 3.0
 
         # 2) Retrieved evidence signal (weighted by source)
@@ -71,6 +90,11 @@ class DiagnosisAgent:
             sw = self._source_weight(getattr(d, "source", ""))
             for cause, tokens in self.KEYWORDS.items():
                 scores[cause] += sw * self._count_hits(text, tokens)
+
+        if has_comm_intent and not has_power_intent:
+            scores["power_path"] *= 0.7
+        if has_comm_intent and not has_rf_intent:
+            scores["rf_path"] *= 0.7
 
         best_cause = max(scores, key=scores.get)
 
