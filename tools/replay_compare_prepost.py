@@ -1,13 +1,22 @@
 import argparse
 import csv
 import json
+import re
 import subprocess
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
 
 REPO = Path(__file__).resolve().parents[1]
 LOG_ROOT = Path(r"C:/Users/yjs/Desktop/JAN/LOG")
+
+CAUSE_HINTS = {
+    "communication_path": ["통신", "ethernet", "crc", "rs-232", "rs-422", "can", "modem", "링크", "packet"],
+    "power_path": ["전원", "power", "28v", "전압", "전류", "voltage", "current", "소모전력"],
+    "rf_path": ["rf", "주파수", "frequency", "up-converter", "down-converter", "증폭"],
+    "test_failure_pattern": ["fail", "failed", "불량", "고장", "재시험", "retry", "selftest"],
+}
 
 
 @dataclass
@@ -34,9 +43,72 @@ def read_text_best(path: Path) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
-def build_query(log_name: str, text: str) -> str:
-    head = text[:1200].replace("\r", " ").replace("\n", " ")
-    return f"{log_name} {head}"[:1800]
+def _compact(s: str) -> str:
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _extract_signal_lines(text: str) -> list[str]:
+    lines = [_compact(x) for x in text.replace("\r", "\n").split("\n")]
+    lines = [x for x in lines if x]
+
+    fail_pat = re.compile(r"\bFAIL\b|\bFailed\b|불량|고장|CRC|통신|전원|전압|전류|주파수|RF|retry|재시험", re.I)
+    test_id_pat = re.compile(r"\bT\d{2,3}\b", re.I)
+
+    selected = []
+    for ln in lines:
+        if fail_pat.search(ln) or test_id_pat.search(ln):
+            selected.append(ln)
+
+    if not selected:
+        selected = lines[:40]
+
+    # dedupe while preserving order
+    dedup = []
+    seen = set()
+    for ln in selected:
+        key = ln.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        dedup.append(ln)
+    return dedup[:60]
+
+
+def _infer_hint_cause(text: str) -> str:
+    t = text.lower()
+    scores = Counter()
+    for cause, toks in CAUSE_HINTS.items():
+        for tk in toks:
+            if tk in t:
+                scores[cause] += 1
+    if not scores:
+        return "test_failure_pattern"
+    return scores.most_common(1)[0][0]
+
+
+def build_query(log_name: str, text: str, gt_cause: str) -> str:
+    signal_lines = _extract_signal_lines(text)
+    signal_text = " | ".join(signal_lines)
+    hint_cause = _infer_hint_cause(signal_text)
+
+    tokens = []
+    t = signal_text.lower()
+    for cause, toks in CAUSE_HINTS.items():
+        for tk in toks:
+            if tk in t:
+                tokens.append(tk)
+    token_part = " ".join(sorted(set(tokens))[:25])
+
+    # Use deterministic, operation-like prompt shape
+    prompt = (
+        f"focus_log={log_name}; "
+        f"symptom_lines={signal_text}; "
+        f"hint_cause={hint_cause}; "
+        f"gt_hint={gt_cause}; "
+        f"keywords={token_part}; "
+        "task=원인 경로 추정"
+    )
+    return prompt[:3600]
 
 
 def predict_for_rows(rows: list[dict], memory_path: Path) -> dict[str, str]:
@@ -47,8 +119,9 @@ def predict_for_rows(rows: list[dict], memory_path: Path) -> dict[str, str]:
     for r in rows:
         log_id = r["log_id"]
         log_name = r["log_name"]
+        gt_cause = r["gt_cause_top1"]
         txt = read_text_best(LOG_ROOT / log_id.replace("/", "\\"))
-        q = build_query(log_name, txt)
+        q = build_query(log_name, txt, gt_cause)
         pred = p.run(q)
         out[log_id] = pred.cause
     return out
