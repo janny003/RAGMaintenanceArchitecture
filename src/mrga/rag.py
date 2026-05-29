@@ -106,7 +106,20 @@ class TFIDFVectorDBRetriever:
 
 
 class HybridRetriever:
-    """Use vector_db first; fallback to keyword corpus if unavailable/empty."""
+    """Use vector_db first; fallback to keyword corpus if unavailable/empty.
+
+    Retrieval quality upgrades:
+    - Candidate over-fetch (top_k*3) then re-rank
+    - Duplicate chunk suppression
+    - Source-priority and query-overlap aware ordering
+    """
+
+    SOURCE_BONUS = {
+        "fmea": 0.40,
+        "절차서": 0.30,
+        "icd": 0.25,
+        "정비이력": 0.15,
+    }
 
     def __init__(self, vector_db_dir: str | Path, fallback: KeywordRetriever):
         self.vector = TFIDFVectorDBRetriever(vector_db_dir)
@@ -120,8 +133,51 @@ class HybridRetriever:
     def vector_db_error(self) -> str:
         return self.vector.init_error
 
+    def _source_bonus(self, source: str) -> float:
+        s = (source or "").lower()
+        for key, bonus in self.SOURCE_BONUS.items():
+            if key in s:
+                return bonus
+        return 0.0
+
+    def _overlap_score(self, query_tokens: list[str], text: str) -> float:
+        if not query_tokens:
+            return 0.0
+        t = text.lower()
+        hits = sum(1 for tok in query_tokens if tok and tok in t)
+        return hits / max(len(query_tokens), 1)
+
+    def _fingerprint(self, text: str) -> str:
+        compact = " ".join((text or "").lower().split())
+        return compact[:320]
+
+    def _rerank_and_dedupe(self, query: str, docs: List[RetrievalDoc], top_k: int) -> List[RetrievalDoc]:
+        q_tokens = [t.strip().lower() for t in query.split() if t.strip()]
+        scored = []
+        for idx, d in enumerate(docs):
+            base_rank_score = max(0.0, 1.0 - 0.06 * idx)
+            src_bonus = self._source_bonus(d.source)
+            ov = self._overlap_score(q_tokens, d.content)
+            score = base_rank_score + src_bonus + 0.8 * ov
+            scored.append((score, d))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        seen = set()
+        out: List[RetrievalDoc] = []
+        for _, d in scored:
+            fp = self._fingerprint(d.content)
+            if fp in seen:
+                continue
+            seen.add(fp)
+            out.append(d)
+            if len(out) >= top_k:
+                break
+        return out
+
     def search(self, query: str, top_k: int = 5) -> List[RetrievalDoc]:
-        docs = self.vector.search(query, top_k=top_k)
-        if docs:
-            return docs
-        return self.fallback.search(query, top_k=top_k)
+        candidate_k = max(top_k, top_k * 3)
+        docs = self.vector.search(query, top_k=candidate_k)
+        if not docs:
+            docs = self.fallback.search(query, top_k=candidate_k)
+        return self._rerank_and_dedupe(query, docs, top_k=top_k)

@@ -56,6 +56,14 @@ class DiagnosisAgent:
         for cause, tokens in self.KEYWORDS.items():
             scores[cause] += 2.5 * self._count_hits(ctx, tokens)
 
+        # Explicit query-intent boost to avoid evidence drift
+        if any(k in ctx for k in ["통신", "crc", "ethernet", "modem", "rs-422", "rs-232", "can"]):
+            scores["communication_path"] += 4.0
+        if any(k in ctx for k in ["전원", "power", "28v", "전압", "전류"]):
+            scores["power_path"] += 3.0
+        if any(k in ctx for k in ["주파수", "rf", "frequency", "증폭"]):
+            scores["rf_path"] += 3.0
+
         # 2) Retrieved evidence signal (weighted by source)
         for d in docs or []:
             text = (d.content or "").lower()
