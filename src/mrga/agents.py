@@ -42,6 +42,9 @@ class DiagnosisAgent:
     def _count_hits(self, text: str, tokens: list[str]) -> int:
         return sum(1 for t in tokens if t in text)
 
+    def _token_hit_count(self, text: str, tokens: list[str]) -> int:
+        return sum(text.count(t) for t in tokens)
+
     @staticmethod
     def _has_any(text: str, tokens: list[str]) -> bool:
         return any(t in text for t in tokens)
@@ -60,6 +63,10 @@ class DiagnosisAgent:
         has_rf_intent = self._has_any(ctx, rf_tokens)
         has_fail_signal = self._has_any(ctx, fail_tokens)
         has_pass_signal = self._has_any(ctx, pass_tokens)
+
+        comm_ctx_hits = self._token_hit_count(ctx, comm_tokens)
+        power_ctx_hits = self._token_hit_count(ctx, power_tokens)
+        rf_ctx_hits = self._token_hit_count(ctx, rf_tokens)
 
         if has_pass_signal and not has_fail_signal:
             return "normal", "LOW", 0.72
@@ -83,6 +90,16 @@ class DiagnosisAgent:
             scores["power_path"] += 3.0
         if has_rf_intent:
             scores["rf_path"] += 3.0
+
+        # Context ratio calibration: emphasize dominant intent in the user/query text.
+        if comm_ctx_hits >= power_ctx_hits + 2 and comm_ctx_hits >= rf_ctx_hits + 2:
+            scores["communication_path"] += 2.5
+            scores["power_path"] *= 0.75
+            scores["rf_path"] *= 0.75
+        elif power_ctx_hits >= comm_ctx_hits + 2 and power_ctx_hits >= rf_ctx_hits + 2:
+            scores["power_path"] += 2.0
+        elif rf_ctx_hits >= comm_ctx_hits + 2 and rf_ctx_hits >= power_ctx_hits + 2:
+            scores["rf_path"] += 2.0
 
         # 2) Retrieved evidence signal (weighted by source)
         for d in docs or []:

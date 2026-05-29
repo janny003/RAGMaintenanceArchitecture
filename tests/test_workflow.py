@@ -48,6 +48,13 @@ def test_pass_context_without_fail_signal_returns_normal(tmp_path):
     assert out.cause == "normal"
 
 
+def test_comm_dominant_context_beats_power_noise(tmp_path):
+    mem = tmp_path / "mem.json"
+    p = MRGAPipeline(memory_path=mem)
+    out = p.run("통신 crc packet fail 통신 frame 오류, 전압 값 참고")
+    assert out.cause == "communication_path"
+
+
 def test_hybrid_retriever_deduplicates_and_limits_top_k():
     fallback = KeywordRetriever([])
     h = HybridRetriever(vector_db_dir="C:/not-used", fallback=fallback)
