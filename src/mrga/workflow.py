@@ -1,6 +1,6 @@
 from pathlib import Path
 from .models import CaseInput, CaseOutput, RetrievalDoc
-from .rag import KeywordRetriever
+from .rag import KeywordRetriever, HybridRetriever
 from .memory import PersistentMemory
 from .agents import (
     ContextAgent,
@@ -13,8 +13,15 @@ from .agents import (
 )
 
 
+DEFAULT_VECTOR_DB_DIR = Path(r"C:/Users/yjs/Desktop/JAN/01. TRD 문서_이전 사업/vector_db")
+
+
 class MRGAPipeline:
-    def __init__(self, memory_path: str | Path = "out/persistent_memory.json"):
+    def __init__(
+        self,
+        memory_path: str | Path = "out/persistent_memory.json",
+        vector_db_dir: str | Path = DEFAULT_VECTOR_DB_DIR,
+    ):
         corpus = [
             RetrievalDoc("ICD", "전원 28V 공급 불안정 시 FAIL 및 재시도 증가"),
             RetrievalDoc("FMEA", "RF 주파수변환 실패 시 down-converter 경로 우선 점검"),
@@ -22,7 +29,9 @@ class MRGAPipeline:
             RetrievalDoc("정비이력", "동일 조건 재시험으로 일시적 FAIL 복구 사례 다수"),
         ]
         self.context_agent = ContextAgent()
-        self.retrieval_agent = RetrievalAgent(KeywordRetriever(corpus))
+        fallback = KeywordRetriever(corpus)
+        self.hybrid_retriever = HybridRetriever(vector_db_dir=vector_db_dir, fallback=fallback)
+        self.retrieval_agent = RetrievalAgent(self.hybrid_retriever)
         self.diagnosis_agent = DiagnosisAgent()
         self.procedure_agent = ProcedureAgent()
         self.trust_gate_agent = TrustGateAgent()

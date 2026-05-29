@@ -16,3 +16,10 @@ def test_memory_written(tmp_path):
     p.run("전원 28V fail")
     txt = mem.read_text(encoding="utf-8")
     assert "power_path" in txt
+
+
+def test_vector_db_connection_state_available_on_this_host(tmp_path):
+    mem = tmp_path / "mem.json"
+    p = MRGAPipeline(memory_path=mem)
+    # user-confirmed vector DB path should be usable on this host
+    assert p.hybrid_retriever.uses_vector_db is True
