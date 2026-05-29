@@ -51,16 +51,32 @@ def _extract_signal_lines(text: str) -> list[str]:
     lines = [_compact(x) for x in text.replace("\r", "\n").split("\n")]
     lines = [x for x in lines if x]
 
-    fail_pat = re.compile(r"\bFAIL\b|\bFailed\b|불량|고장|CRC|통신|전원|전압|전류|주파수|RF|retry|재시험", re.I)
+    fail_pat = re.compile(r"\bFAIL\b|\bFailed\b|불량|고장|CRC|통신|retry|재시험|timeout|packet|ack|nack", re.I)
+    pass_pat = re.compile(r"\bPASS\b|\bPassed\b|정상", re.I)
     test_id_pat = re.compile(r"\bT\d{2,3}\b", re.I)
 
-    selected = []
-    for ln in lines:
-        if fail_pat.search(ln) or test_id_pat.search(ln):
-            selected.append(ln)
+    fail_lines: list[str] = []
+    neutral_lines: list[str] = []
+    pass_lines: list[str] = []
 
+    for ln in lines:
+        if fail_pat.search(ln):
+            fail_lines.append(ln)
+        elif pass_pat.search(ln):
+            pass_lines.append(ln)
+        elif test_id_pat.search(ln):
+            neutral_lines.append(ln)
+
+    # Prioritize actionable failures first, then structural test-id lines.
+    selected = fail_lines + neutral_lines
+
+    # If no strong signal exists, use a small fallback window.
     if not selected:
-        selected = lines[:40]
+        selected = lines[:25]
+
+    # Keep at most a few PASS lines so routine boilerplate does not dominate the query.
+    if pass_lines:
+        selected.extend(pass_lines[:4])
 
     # dedupe while preserving order
     dedup = []
@@ -71,7 +87,7 @@ def _extract_signal_lines(text: str) -> list[str]:
             continue
         seen.add(key)
         dedup.append(ln)
-    return dedup[:60]
+    return dedup[:40]
 
 
 def _infer_hint_cause(text: str) -> str:
